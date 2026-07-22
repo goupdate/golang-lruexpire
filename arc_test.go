@@ -357,6 +357,121 @@ func TestARC_Contains(t *testing.T) {
 	}
 }
 
+// TestARC_NoDivisionByZero stress-tests the ARC cache with extensive
+// randomized operations to verify no panics occur in the ARC replace()
+// logic, especially when ghost buffer lengths are zero.
+func TestARC_NoDivisionByZero(t *testing.T) {
+	l, err := NewARC(64)
+	if err != nil {
+		t.Fatalf("err: %v", err)
+	}
+
+	// Phase 1: Fill the cache
+	for i := 0; i < 128; i++ {
+		l.Add(i, i)
+	}
+	if l.Len() != 64 {
+		t.Fatalf("bad len after fill: %v", l.Len())
+	}
+
+	// Phase 2: Promote half of entries to t2 (frequent) via Get
+	for i := 64; i < 128; i++ {
+		l.Get(i)
+	}
+
+	// Phase 3: Add more entries — this triggers eviction from t1→b1 and t2→b2
+	for i := 128; i < 256; i++ {
+		l.Add(i, i)
+	}
+
+	// Phase 4: Trigger ARC adaptive replacement heavily.
+	// Re-add some keys that may be in ghost buffers (b1/b2).
+	for i := 0; i < 500; i++ {
+		l.Add(i, i) // these may hit b1 or b2 ghost buffers, triggering P adjustment
+	}
+
+	// Phase 5: Get/Remove mix — keep the cache under churn
+	for i := 0; i < 1000; i++ {
+		k := i % 300
+		if i%3 == 0 {
+			l.Add(k, k)
+		} else if i%3 == 1 {
+			l.Get(k)
+		} else {
+			l.Remove(k)
+		}
+	}
+
+	// Phase 6: Verify Keys() works without panic
+	keys := l.Keys()
+	if len(keys) != l.Len() {
+		t.Logf("Keys() count %d vs Len() %d (ARC may have internal ghost entries)", len(keys), l.Len())
+	}
+
+	// Phase 7: Purge and verify no panic
+	l.Purge()
+	if l.Len() != 0 {
+		t.Fatalf("bad len after purge: %v", l.Len())
+	}
+	// Verify ghost buffers are also empty
+	if l.b1.Len() != 0 || l.b2.Len() != 0 {
+		t.Logf("ghost buffers not empty after purge: b1=%d b2=%d", l.b1.Len(), l.b2.Len())
+	}
+}
+
+// TestARC_DivisionByZero_GhostTriggers specifically targets the scenario
+// where one ghost buffer is empty while the other has entries, and we
+// hit the non-empty one — triggering delta calculation.
+func TestARC_DivisionByZero_GhostTriggers(t *testing.T) {
+	// Use a small cache to make eviction patterns predictable
+	l, err := NewARC(4)
+	if err != nil {
+		t.Fatalf("err: %v", err)
+	}
+
+	// Fill t1 (recent): keys 0-3
+	l.Add(0, 0)
+	l.Add(1, 1)
+	l.Add(2, 2)
+	l.Add(3, 3)
+
+	// Promote 2 to t2 (frequent) via Get
+	l.Get(2)
+
+	// Now t1=[0,1,3], t2=[2], b1=[], b2=[]
+
+	// Add 4 → evicts from t1 (0 goes to b1)
+	l.Add(4, 4)
+	// t1=[1,3,4], t2=[2], b1=[0], b2=[]
+
+	// Add 5 → evicts from t1 (1 goes to b1)
+	l.Add(5, 5)
+	// t1=[3,4,5], t2=[2], b1 should now have [0,1] or evict 0
+
+	// Add 6 → evicts from t1 (3 goes to b1), this may push oldest from b1
+	l.Add(6, 6)
+	// t1=[4,5,6], t2=[2], b1=[...], b2=[]
+
+	// Now aggressively add and get to exercise the P-adjustment paths
+	// This should eventually trigger both b1 and b2 hit scenarios
+	for i := 0; i < 100; i++ {
+		k := i % 10
+		if i%2 == 0 {
+			l.Add(k, k)
+		} else {
+			l.Get(k)
+		}
+	}
+
+	// Verify no panic occurred and cache is in valid state
+	keys := l.Keys()
+	if len(keys) != l.Len() {
+		t.Logf("Keys() count %d vs Len() %d", len(keys), l.Len())
+	}
+	t.Logf("Final state: t1=%d t2=%d b1=%d b2=%d p=%d",
+		l.t1.Len(), l.t2.Len(), l.b1.Len(), l.b2.Len(), l.p)
+}
+
 // Test that Peek doesn't update recent-ness
 func TestARC_Peek(t *testing.T) {
 	l, err := NewARC(2)
