@@ -113,6 +113,7 @@ func (c *LRU) AddEx(key, value interface{}, expire time.Duration) bool {
 func (c *LRU) Get(key interface{}) (value interface{}, ok bool) {
 	if ent, ok := c.items[key]; ok {
 		if ent.Value.(*entry).IsExpired() {
+			c.removeElement(ent)
 			return nil, false
 		}
 		c.evictList.MoveToFront(ent)
@@ -126,6 +127,7 @@ func (c *LRU) Get(key interface{}) (value interface{}, ok bool) {
 func (c *LRU) Contains(key interface{}) (ok bool) {
 	if ent, ok := c.items[key]; ok {
 		if ent.Value.(*entry).IsExpired() {
+			c.removeElement(ent)
 			return false
 		}
 		return ok
@@ -138,6 +140,7 @@ func (c *LRU) Contains(key interface{}) (ok bool) {
 func (c *LRU) Peek(key interface{}) (value interface{}, ok bool) {
 	if ent, ok := c.items[key]; ok {
 		if ent.Value.(*entry).IsExpired() {
+			c.removeElement(ent)
 			return nil, false
 		}
 		return ent.Value.(*entry).value, true
@@ -178,11 +181,9 @@ func (c *LRU) GetOldest() (interface{}, interface{}, bool) {
 
 // Keys returns a slice of the keys in the cache, from oldest to newest.
 func (c *LRU) Keys() []interface{} {
-	keys := make([]interface{}, len(c.items))
-	i := 0
+	keys := make([]interface{}, 0, c.evictList.Len())
 	for ent := c.evictList.Back(); ent != nil; ent = ent.Prev() {
-		keys[i] = ent.Value.(*entry).key
-		i++
+		keys = append(keys, ent.Value.(*entry).key)
 	}
 	return keys
 }

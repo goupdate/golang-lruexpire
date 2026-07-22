@@ -119,7 +119,11 @@ func (c *ARCCache) AddEx(key, value interface{}, expire time.Duration) {
 		b1Len := c.b1.Len()
 		b2Len := c.b2.Len()
 		if b2Len > b1Len {
-			delta = b2Len / b1Len
+			if b1Len > 0 {
+				delta = b2Len / b1Len
+			} else {
+				delta = b2Len
+			}
 		}
 		if c.p+delta >= c.size {
 			c.p = c.size
@@ -148,7 +152,11 @@ func (c *ARCCache) AddEx(key, value interface{}, expire time.Duration) {
 		b1Len := c.b1.Len()
 		b2Len := c.b2.Len()
 		if b1Len > b2Len {
-			delta = b1Len / b2Len
+			if b2Len > 0 {
+				delta = b1Len / b2Len
+			} else {
+				delta = b1Len
+			}
 		}
 		if delta >= c.p {
 			c.p = 0
