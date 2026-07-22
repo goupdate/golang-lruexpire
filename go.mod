@@ -1,3 +1,3 @@
-module github.com/MasterDimmy/golang-lruexpire
+module github.com/goupdate/golang-lruexpire
 
-go 1.18
+go 1.25
