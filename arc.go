@@ -4,7 +4,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/MasterDimmy/golang-lruexpire/simplelru"
+	"github.com/goupdate/golang-lruexpire/simplelru"
 )
 
 // ARCCache is a thread-safe fixed size Adaptive Replacement Cache (ARC).

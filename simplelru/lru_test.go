@@ -333,3 +333,30 @@ func TestLRU_Keys_Empty(t *testing.T) {
 		t.Fatalf("Keys() should return 0 for empty cache, got: %v", len(keys))
 	}
 }
+
+// TestGetPurgesExpired verifies that Get removes expired entries from the cache
+// (purge-on-access). This prevents Len() from counting dead entries forever and
+// prevents duplicate keys across dual caches after expiry+re-add.
+// Scenario: 10 entries with 50ms expiry, wait past expiry, Get one key -> Len drops to 9.
+func TestGetPurgesExpired(t *testing.T) {
+	l, err := NewLRUWithExpire(100, 50*time.Millisecond, nil)
+	if err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	for i := 0; i < 10; i++ {
+		l.Add(i, i)
+	}
+	time.Sleep(120 * time.Millisecond)
+	if got := l.Len(); got != 10 {
+		t.Fatalf("bad len after expiry: %v, want 10", got)
+	}
+	if _, ok := l.Get(0); ok {
+		t.Fatalf("expired key should miss")
+	}
+	if got := l.Len(); got != 9 {
+		t.Fatalf("bad len after Get purge: %v, want 9", got)
+	}
+	if _, ok := l.Get(0); ok {
+		t.Fatalf("purged key should not be found")
+	}
+}
